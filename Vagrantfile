@@ -128,17 +128,6 @@ Vagrant.configure("2") do |config|
         kubectl create -f $HOME/kube-flannel.yml
       EOH
     end
-
-    c.vm.provision 'pull-rook-manifests', type: 'shell' do |s|
-      s.privileged = false
-      s.inline = <<-EOH
-        PROXY_CONFIG=/etc/profile.d/proxy.sh
-        if [ -e $PROXY_CONFIG ]; then . $PROXY_CONFIG; fi
-        curl -s -O https://raw.githubusercontent.com/rook/rook/master/demo/kubernetes/rook-operator.yaml
-        curl -s -O https://raw.githubusercontent.com/rook/rook/master/demo/kubernetes/rook-cluster.yaml
-        curl -s -O https://raw.githubusercontent.com/rook/rook/master/demo/kubernetes/rook-tools.yaml
-      EOH
-    end
   end
 
   worker_count = 3
