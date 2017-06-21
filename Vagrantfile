@@ -84,22 +84,22 @@ Vagrant.configure("2") do |config|
   config.hostmanager.enabled = true
   config.hostmanager.manage_guest = true
 
-  cpu_count = 1
-  env_cpu_count = ENV['cpu_count'].to_i
-  (cpu_count = env_cpu_count) unless env_cpu_count.zero?
-
-  memory_mb = 1024
-  env_memory_mb = ENV['memory_mb'].to_i
-  (memory_mb = env_memory_mb) unless env_memory_mb.zero?
-
-  config.vm.provider "virtualbox" do |vb|
-    vb.cpus = cpu_count
-    vb.memory = memory_mb
-  end
-
   config.vm.define master_vm do |c|
     c.vm.hostname = master_vm
     c.vm.network 'private_network', ip: master_vm_ip
+
+    cpu_count = 1
+    env_cpu_count = ENV['master_cpu_count'].to_i
+    (cpu_count = env_cpu_count) unless env_cpu_count.zero?
+
+    memory_mb = 1024
+    env_memory_mb = ENV['master_memory_mb'].to_i
+    (memory_mb = env_memory_mb) unless env_memory_mb.zero?
+
+    c.vm.provider "virtualbox" do |vb|
+      vb.cpus = cpu_count
+      vb.memory = memory_mb
+    end
 
     c.vm.provision 'kubeadm-init', type: 'shell' do |s|
       s.inline = "sudo kubeadm init --apiserver-advertise-address #{master_vm_ip} --pod-network-cidr #{flannel_network} --token #{kubeadm_token}"
@@ -139,9 +139,23 @@ Vagrant.configure("2") do |config|
 
     vm_name = "w#{idx}"
     vm_ip = (master_vm_ip.split('.')[0..2] + [10+idx]).join('.')
+
+    cpu_count = 1
+    env_cpu_count = ENV['worker_cpu_count'].to_i
+    (cpu_count = env_cpu_count) unless env_cpu_count.zero?
+
+    memory_mb = 1024
+    env_memory_mb = ENV['worker_memory_mb'].to_i
+    (memory_mb = env_memory_mb) unless env_memory_mb.zero?
+
     config.vm.define vm_name do |c|
       c.vm.hostname = vm_name
       c.vm.network "private_network", ip: vm_ip
+
+      c.vm.provider "virtualbox" do |vb|
+        vb.cpus = cpu_count
+        vb.memory = memory_mb
+      end
 
       c.vm.provision 'join-kubernetes-cluster', type: 'shell' do |s|
         s.inline = "sudo kubeadm join --token #{kubeadm_token} #{master_vm_ip}:6443"
