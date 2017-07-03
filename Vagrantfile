@@ -77,6 +77,27 @@ Vagrant.configure("2") do |config|
     s.inline = update_ca_certificates_script
   end unless update_ca_certificates_script.empty?
 
+  config.vm.provision 'configure-swap-space', type: 'shell' do |s|
+    s.inline = <<-EOH
+      #!/bin/bash
+      swap_path='/swap'
+      swap_size="#{ENV['vm_swap_size'] ||= '2048'}M"
+      # This could be a re-provision
+      if grep -qw "^${swap_path}" /proc/swaps ; then
+        swapoff "$swap_path"
+      fi
+      fallocate -l $swap_size "$swap_path"
+      truncate -s $swap_size "$swap_path"
+      chmod 600 "$swap_path"
+      mkswap -f "$swap_path"
+      /bin/sync
+      swapon "$swap_path"
+      if ! grep -qw "^${swap_path}" /etc/fstab ; then
+        echo "$swap_path none swap defaults 0 0" | tee -a /etc/fstab
+      fi
+    EOH
+  end
+
   config.vm.provision 'generic-install', type: 'shell' do |s|
     s.inline = $generic_install_script
   end
