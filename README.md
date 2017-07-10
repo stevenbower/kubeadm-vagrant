@@ -5,6 +5,15 @@ This Vagrantfile allows building a Kubernetes cluster with a configurable number
 
 If you are building behind proxies and require proxy configurations inside the VMs, install the **vagrant-proxyconf** plugin with `vagrant plugin install vagrant-proxyconf`.
 
+The following files will be used by the Vagrantfile to override files inside the VM during startup, if found in a directory named **custom** at the same level as the Vagrantfile.
+
+Files
+---
+* `sources.list`: override default system apt sources
+* `sources.list.kubernetes`: override default kubernetes apt repo
+* `kube-flannel.yml`: override Flannel deployment manifest
+* `kube-flannel-rbac.yml`: override Flannel RBAC deployment manifest
+
 The following environment variables can be configured to control the disposition of the cluster:
 
 Proxy variables
@@ -19,3 +28,9 @@ Cluster sizing variables
 * `worker_count`: configures the number of worker VMs that will be built (default **3**).
 * `cpu_count`: configures the number of CPUs each VM will have (default **1**).
 * `memory_mb`: configures the amount of memory in MB each VM will have (default **1024**).
+* `drive_size`: configures the size of an additional volume the will be created in the VM (default **20480**).
+
+Kubernetes variables
+---
+* `repo_prefix`: prefix used for container names within kube cluster
+
