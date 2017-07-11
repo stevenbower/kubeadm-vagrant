@@ -4,18 +4,74 @@
 # Install a kube cluster using kubeadm:
 # http://kubernetes.io/docs/getting-started-guides/kubeadm/
 
-# relevant environment variables:
-# http_proxy, https_proxy, no_proxy: if set will be configured inside VMs
-#   for proxy access
-# cacerts_dir: directory on build host with extra CA certs to add
-# worker_count: number of worker nodes to build (default 3)
+# See README.md for relevant environment variables and configuration settings
 
+require 'openssl'
 require 'securerandom'
 require 'uri'
 
 def get_environment_variable(envvar)
   ENV[envvar] || ENV[envvar.upcase] || ENV[envvar.downcase]
 end
+
+def apply_vm_hardware_customizations(provider)
+  provider.customize ["modifyvm", :id, "--vram", "16"]
+  provider.customize ["modifyvm", :id, "--largepages", "on"]
+  provider.customize ["modifyvm", :id, "--nestedpaging", "on"]
+  provider.customize ["modifyvm", :id, "--vtxvpid", "on"]
+  provider.customize ["modifyvm", :id, "--hwvirtex", "on"]
+  provider.customize ["modifyvm", :id, "--ioapic", "on"]
+  provider.customize ["modifyvm", :id, "--uart1", "0x3F8", "4"]
+  provider.customize ["modifyvm", :id, "--uart2", "0x2F8", "3"]
+  provider.customize ["modifyvm", :id, "--uartmode1", "disconnected"]
+  provider.customize ["modifyvm", :id, "--uartmode2", "disconnected"]
+end
+
+# hook extra disk creation in here
+class VagrantPlugins::ProviderVirtualBox::Action::SetName
+  alias_method :original_call, :call
+  def call(env)
+    machine = env[:machine]
+    driver = machine.provider.driver
+    uuid = driver.instance_eval { @uuid }
+    ui = env[:ui]
+
+    # Find out folder of VM
+    vm_folder = ""
+    vm_info = driver.execute("showvminfo", uuid, "--machinereadable")
+    lines = vm_info.split("\n")
+    lines.each do |line|
+      if line.start_with?("CfgFile")
+        vm_folder = line.split("=")[1].gsub('"','')
+        vm_folder = File.expand_path("..", vm_folder)
+        ui.info "VM Folder is: #{vm_folder}"
+      end
+    end
+
+    disk_size = get_environment_variable('disk_size') || '20480'
+
+    # add 2 to idx because sda is the boot disk and sdb is the cloud-init config drive
+    # (without which boot will stall for up to 5 minutes)
+    ('c'..'f').each_with_index do |disk, idx|
+      disk_name = "sd#{disk}"
+      disk_file = File.join(vm_folder, "#{disk_name}.vmdk")
+
+      ui.info "Adding disk #{disk_name} to VM"
+      if File.exist?(disk_file)
+        ui.info "Disk already exists"
+      else
+        driver.execute("createmedium", "disk", "--filename", disk_file, "--size", disk_size, "--format", "vmdk")
+        driver.execute('storageattach', uuid, '--storagectl', 'SCSI', '--port', (idx+2).to_s, '--type', 'hdd', '--medium', disk_file)
+      end
+    end
+
+    original_call(env)
+  end
+end
+
+kubernetes_version = get_environment_variable('kubernetes_version')
+# append -00 since kube packages are versioned like '1.7.0-00'
+kubernetes_version += '-00' if kubernetes_version
 
 $generic_install_script = <<-EOH
   #!/bin/sh
@@ -37,8 +93,20 @@ $generic_install_script = <<-EOH
 
   # Install Docker/Kubernetes
   apt-get update
-  apt-get install -y docker.io kubelet kubeadm kubectl kubernetes-cni
+EOH
 
+$generic_install_script << \
+  if kubernetes_version
+    <<-EOH
+  apt-get install -y docker.io kubelet=#{kubernetes_version} kubeadm=#{kubernetes_version} kubectl=#{kubernetes_version} kubernetes-cni
+    EOH
+  else
+    <<-EOH
+  apt-get install -y docker.io kubelet kubeadm kubectl kubernetes-cni
+    EOH
+  end
+
+$generic_install_script << <<-EOH
   # Override repo prefix for kubelet if needed
   if [[ "$KUBE_REPO_PREFIX" != "" ]]; then
     OVERRIDE=/etc/systemd/system/kubelet.service.d/override.conf
@@ -158,6 +226,8 @@ Vagrant.configure("2") do |config|
     c.vm.provider "virtualbox" do |vb|
       vb.cpus = cpu_count
       vb.memory = memory_mb
+
+      apply_vm_hardware_customizations(vb)
     end
 
     c.vm.provision 'kubeadm-init', type: 'shell' do |s|
@@ -234,12 +304,14 @@ Vagrant.configure("2") do |config|
       c.vm.provider "virtualbox" do |vb|
         vb.cpus = cpu_count
         vb.memory = memory_mb
+
+        apply_vm_hardware_customizations(vb)
       end
 
       c.vm.provision 'join-kubernetes-cluster', type: 'shell' do |s|
         s.env = kubeadm_env
         s.inline = "sudo kubeadm join --token #{kubeadm_token} #{master_vm_ip}:6443"
       end
-    end
-  end
-end
+    end # config.vm.define
+  end # worker_count.times
+end # Vagrant.configure
