@@ -3,6 +3,8 @@ Building a Kubernetes cluster with Vagrant
 
 This Vagrantfile allows building a Kubernetes cluster with a configurable number of workers. The cluster is configured using `kubeadm`.
 
+This Vagrantfile requires the **vagrant-hostmanager** plugin.
+
 If you are building behind proxies and require proxy configurations inside the VMs, install the **vagrant-proxyconf** plugin with `vagrant plugin install vagrant-proxyconf`.
 
 The following files will be used by the Vagrantfile to override files inside the VM during startup, if found in a directory named **custom** at the same level as the Vagrantfile.
