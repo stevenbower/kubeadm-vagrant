@@ -15,6 +15,8 @@ def get_environment_variable(envvar)
 end
 
 def apply_vm_hardware_customizations(provider)
+  provider.linked_clone = true
+
   provider.customize ["modifyvm", :id, "--vram", "16"]
   provider.customize ["modifyvm", :id, "--largepages", "on"]
   provider.customize ["modifyvm", :id, "--nestedpaging", "on"]
@@ -70,15 +72,13 @@ class VagrantPlugins::ProviderVirtualBox::Action::SetName
 end
 
 kubernetes_version = get_environment_variable('kubernetes_version')
-# append -00 since kube packages are versioned like '1.7.0-00'
-kubernetes_version += '-00' if kubernetes_version
 
 $generic_install_script = <<-EOH
   #!/bin/sh
 
   # Update sources.list
   if [ -f /vagrant/custom/sources.list ]; then
-    cp /vagrant/custom/sources.list /etc/apt/custom/sources.list
+    cp /vagrant/custom/sources.list /etc/apt/sources.list
   fi
 
   # Update sources.list for kubernetes
@@ -98,7 +98,12 @@ EOH
 $generic_install_script << \
   if kubernetes_version
     <<-EOH
-  apt-get install -y docker.io kubelet=#{kubernetes_version} kubeadm=#{kubernetes_version} kubectl=#{kubernetes_version} kubernetes-cni
+  apt-get install -y \
+  docker.io \
+  kubelet=#{kubernetes_version}-00 \
+  kubeadm=#{kubernetes_version}-00 \
+  kubectl=#{kubernetes_version}-00 \
+  kubernetes-cni
     EOH
   else
     <<-EOH
@@ -110,7 +115,8 @@ $generic_install_script << <<-EOH
   # Override repo prefix for kubelet if needed
   if [[ "$KUBE_REPO_PREFIX" != "" ]]; then
     OVERRIDE=/etc/systemd/system/kubelet.service.d/override.conf
-    echo "[Service]\nEnvironment=\"KUBELET_EXTRA_ARGS=--pod-infra-container-image ${KUBE_REPO_PREFIX}/pause-amd64:3.0\"" > $OVERRIDE
+    echo "[Service]" > $OVERRIDE
+    echo "Environment='KUBELET_EXTRA_ARGS=--pod-infra-container-image ${KUBE_REPO_PREFIX}/pause-amd64:3.0'" >> $OVERRIDE
 
     systemctl daemon-reload && sleep 5 && systemctl restart kubelet
   fi
@@ -122,9 +128,14 @@ Vagrant.configure("2") do |config|
   master_vm_ip = '192.168.77.2'
   flannel_network = '10.244.0.0/16'
   repo_prefix = get_environment_variable('repo_prefix')
+
+  # retain base repo prefix for pulling flannel containers
   kubeadm_env = \
     if repo_prefix
-      {"KUBE_REPO_PREFIX" => URI.join(repo_prefix, 'gcr.io/google_containers').to_s}
+      {
+        "REPO_PREFIX" => repo_prefix,
+        "KUBE_REPO_PREFIX" => repo_prefix + "/gcr.io/google_containers"
+      }
     else
       {}
     end
@@ -231,10 +242,15 @@ Vagrant.configure("2") do |config|
     end
 
     c.vm.provision 'kubeadm-init', type: 'shell' do |s|
+      cmd = "kubeadm init --apiserver-advertise-address #{master_vm_ip} --pod-network-cidr #{flannel_network} --token #{kubeadm_token}"
       s.env = kubeadm_env
-      s.inline = "sudo kubeadm init --apiserver-advertise-address #{master_vm_ip} --pod-network-cidr #{flannel_network} --token #{kubeadm_token}"
+      if kubernetes_version
+        cmd += " --kubernetes-version=v#{kubernetes_version}"
+      end
+      s.inline = cmd
     end
 
+    # use sudo here so that the id subshells get the non-root user
     c.vm.provision 'copy-kubeadm-config', type: 'shell' do |s|
       s.privileged = false
       s.inline = <<-EOH
@@ -269,7 +285,7 @@ Vagrant.configure("2") do |config|
         sed -r -i -e "s|command: \\[ \\"/opt/bin/flanneld\\", \\"--ip-masq\\", \\"--kube-subnet-mgr\\" \\]|command: \\[ \\"/opt/bin/flanneld\\", \\"--ip-masq\\", \\"--kube-subnet-mgr\\", \\"--iface\\", \\"${FLANNEL_IFACE}\\" \\]|" $HOME/kube-flannel.yml
 
         if [[ "$KUBE_REPO_PREFIX" != "" ]]; then
-          sed -i -e "s|quay.io/coreos/flannel:|${KUBE_REPO_PREFIX}/quay.io/coreos/flannel:|g" $HOME/kube-flannel.yml
+          sed -i -e "s|quay.io/coreos/flannel:|${REPO_PREFIX}/quay.io/coreos/flannel:|g" $HOME/kube-flannel.yml
         fi
 
         kubectl create -f $HOME/kube-flannel-rbac.yml
