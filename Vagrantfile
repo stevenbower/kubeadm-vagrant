@@ -257,6 +257,7 @@ Vagrant.configure("2") do |config|
         #!/bin/sh
         mkdir -p $HOME/.kube
         sudo cp /etc/kubernetes/admin.conf $HOME/.kube/config
+        sudo cp -f /etc/kubernetes/admin.conf /vagrant/kube.config
         sudo chown $(id -u):$(id -g) $HOME/.kube/config
       EOH
     end
