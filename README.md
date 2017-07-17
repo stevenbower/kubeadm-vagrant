@@ -33,6 +33,7 @@ Building without Internet access
   * create `sources.list.kubernetes`, containing the apt paths to use for Kubernetes packages (**NOTE**: this repo must have the GPG key at `doc/apt-key.gpg`)
   * create `kube-flannel.yml` (this can be a straightforward copy of the upstream manifest - URL is in the Vagrantfile)
   * create `kube-flannel-rbac.yml` (above also applies here)
+  * create `calico.yml` if you want to use Calico as the network provider (above also applies here)
 3. If your internal resources have TLS certificates that are not signed by a standard root CA, create a directory on your build host, place the necessary CA certificates inside, and define `cacerts_dir` in your environment to be the full path to this directory. Any certificates found in this directory will be added to the system CA certificate chain.
 4. Run `kubernetes_version=X.Y.Z vagrant up`, where **X.Y.Z** is the desired version of Kubernetes that you want to install. **NOTE** that this version number will be used for both Kubernetes packages and containers. Specifying the version number is required in order to stop **kubeadm** from reaching out to the Internet to query for the latest version.
 
@@ -41,10 +42,11 @@ Files
 
 The build process will look for files with these names in the `custom` directory in this repository. If found, they will be used during the build process.
 
-* `sources.list`: override default system apt sources
-* `sources.list.kubernetes`: override default kubernetes apt repo
+* `calico.yml`: override Calico deployment manifest
 * `kube-flannel.yml`: override Flannel deployment manifest
 * `kube-flannel-rbac.yml`: override Flannel RBAC deployment manifest
+* `sources.list`: override default system apt sources
+* `sources.list.kubernetes`: override default kubernetes apt repo
 
 Environment variables
 ===
@@ -67,6 +69,6 @@ Cluster sizing variables
 
 Kubernetes variables
 ---
-* `kube_version`
+* `kube_version`: version number of Kubernetes to install (currently used both for apt packages and container tags)
+* `network_provider`: pod networking provider to use, options are **calico** or **flannel** (default is **flannel**)
 * `repo_prefix`: prefix used for container names within kube cluster (if you want to pull from a local registry rather than the Internet)
-
