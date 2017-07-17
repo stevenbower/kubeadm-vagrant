@@ -356,8 +356,14 @@ Vagrant.configure("2") do |config|
       end
 
       c.vm.provision 'join-kubernetes-cluster', type: 'shell' do |s|
+        kubeadm_join_cmd = "sudo kubeadm join --token #{kubeadm_token}"
+
+        # if this envvar is defined in any way, skip kubeadm preflight checks
+        kubeadm_join_cmd += ' --skip-preflight-checks' if get_environment_variable('skip_preflight_checks')
+        kubeadm_join_cmd += " #{master_vm_ip}:6443"
+
         s.env = kubeadm_env
-        s.inline = "sudo kubeadm join --token #{kubeadm_token} #{master_vm_ip}:6443"
+        s.inline = kubeadm_join_cmd
       end # c.vm.provision 'join-kubernetes-cluster'
     end # config.vm.define
   end # worker_count.times

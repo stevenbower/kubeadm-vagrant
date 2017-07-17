@@ -72,3 +72,4 @@ Kubernetes variables
 * `kube_version`: version number of Kubernetes to install (currently used both for apt packages and container tags)
 * `network_provider`: pod networking provider to use, options are **calico** or **flannel** (default is **flannel**)
 * `repo_prefix`: prefix used for container names within kube cluster (if you want to pull from a local registry rather than the Internet)
+* `skip_preflight_checks`: skip preflight checks if this variable exists (can be set to anything)
