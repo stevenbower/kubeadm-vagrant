@@ -126,7 +126,7 @@ Vagrant.configure("2") do |config|
   kubeadm_token = "#{SecureRandom.hex[0...6]}.#{SecureRandom.hex[0...16]}"
   master_vm = 'master'
   master_vm_ip = '192.168.77.2'
-  flannel_network = '10.244.0.0/16'
+  pod_network = '10.244.0.0/16'
   repo_prefix = get_environment_variable('repo_prefix')
 
   # retain base repo prefix for pulling flannel containers
@@ -242,7 +242,7 @@ Vagrant.configure("2") do |config|
     end
 
     c.vm.provision 'kubeadm-init', type: 'shell' do |s|
-      cmd = "kubeadm init --apiserver-advertise-address #{master_vm_ip} --pod-network-cidr #{flannel_network} --token #{kubeadm_token}"
+      cmd = "kubeadm init --apiserver-advertise-address #{master_vm_ip} --pod-network-cidr #{pod_network} --token #{kubeadm_token}"
       s.env = kubeadm_env
       if kubernetes_version
         cmd += " --kubernetes-version=v#{kubernetes_version}"
@@ -262,39 +262,70 @@ Vagrant.configure("2") do |config|
       EOH
     end
 
-    c.vm.provision 'install-flannel', type: 'shell' do |s|
-      s.env = kubeadm_env
-      s.privileged = false
-      s.inline = <<-EOH
-        #!/bin/sh
+    env_network_provider = get_environment_variable('network_provider')
+    network_provider = env_network_provider.nil? ? 'flannel' : env_network_provider.downcase
 
-        if [ -f /vagrant/custom/kube-flannel-rbac.yml ]; then
-          cp /vagrant/custom/kube-flannel-rbac.yml $HOME/kube-flannel-rbac.yml
-        else
-          curl -s -O https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel-rbac.yml
-        fi
+    fail "#{network_provider} is not a supported network provider" unless %w(flannel calico).include?(network_provider)
 
-        if [ -f /vagrant/custom/kube-flannel.yml ]; then
-          cp /vagrant/custom/kube-flannel.yml $HOME/kube-flannel.yml
-        else
-          curl -s -O https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
-        fi
+    if network_provider == 'flannel'
+      c.vm.provision 'install-flannel', type: 'shell' do |s|
+        s.env = kubeadm_env
+        s.privileged = false
+        s.inline = <<-EOH
+          #!/bin/sh
 
-        export FLANNEL_IFACE=$(ip a | grep #{master_vm_ip} | awk '{ print $NF }')
+          if [ -f /vagrant/custom/kube-flannel-rbac.yml ]; then
+            cp /vagrant/custom/kube-flannel-rbac.yml $HOME/kube-flannel-rbac.yml
+          else
+            curl -s -O https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel-rbac.yml
+          fi
 
-        # substitute in the interface on our VM as the Flannel interface
-        sed -r -i -e "s|command: \\[ \\"/opt/bin/flanneld\\", \\"--ip-masq\\", \\"--kube-subnet-mgr\\" \\]|command: \\[ \\"/opt/bin/flanneld\\", \\"--ip-masq\\", \\"--kube-subnet-mgr\\", \\"--iface\\", \\"${FLANNEL_IFACE}\\" \\]|" $HOME/kube-flannel.yml
+          if [ -f /vagrant/custom/kube-flannel.yml ]; then
+            cp /vagrant/custom/kube-flannel.yml $HOME/kube-flannel.yml
+          else
+            curl -s -O https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+          fi
 
-        if [[ "$KUBE_REPO_PREFIX" != "" ]]; then
-          sed -i -e "s|quay.io/coreos/flannel:|${REPO_PREFIX}/quay.io/coreos/flannel:|g" $HOME/kube-flannel.yml
-        fi
+          export FLANNEL_IFACE=$(ip a | grep #{master_vm_ip} | awk '{ print $NF }')
 
-        kubectl create -f $HOME/kube-flannel-rbac.yml
-        sleep 2
-        kubectl create -f $HOME/kube-flannel.yml
-      EOH
-    end
-  end
+          # substitute in the interface on our VM as the Flannel interface
+          sed -r -i -e "s|command: \\[ \\"/opt/bin/flanneld\\", \\"--ip-masq\\", \\"--kube-subnet-mgr\\" \\]|command: \\[ \\"/opt/bin/flanneld\\", \\"--ip-masq\\", \\"--kube-subnet-mgr\\", \\"--iface\\", \\"${FLANNEL_IFACE}\\" \\]|" $HOME/kube-flannel.yml
+
+          if [[ "$KUBE_REPO_PREFIX" != "" ]]; then
+            sed -i -e "s|quay.io/coreos/flannel:|${REPO_PREFIX}/quay.io/coreos/flannel:|g" $HOME/kube-flannel.yml
+          fi
+
+          kubectl create -f $HOME/kube-flannel-rbac.yml
+          sleep 2
+          kubectl create -f $HOME/kube-flannel.yml
+        EOH
+      end # c.vm.provision 'install-flannel'
+    elsif network_provider == 'calico'
+      c.vm.provision 'install-calico', type: 'shell' do |s|
+        s.env = kubeadm_env
+        s.privileged = false
+        s.inline = <<-EOH
+          #!/bin/sh
+
+          if [ -f /vagrant/custom/calico.yml ]; then
+            cp /vagrant/custom/calico.yml $HOME/calico.yaml
+          else
+            curl -s -O http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
+          fi
+
+          export CALICO_NETWORK=#{pod_network}
+
+          # use the same network that we're specifying for Flannel installs (for consistency)
+          sed -i -e "/CALICO_IPV4POOL_CIDR/{n;s|.*|              value: \\"$CALICO_NETWORK\\"|}" $HOME/calico.yaml
+
+          # disable IP-in-IP
+          sed -i -e '/CALICO_IPV4POOL_IPIP/{n;s/.*/              value: "off"/}' $HOME/calico.yaml
+
+          kubectl create -f $HOME/calico.yaml
+        EOH
+      end # c.vm.provision 'install-calico'
+    end # if/elsif
+  end # config.vm.define master_vm
 
   worker_count = 3
   env_worker_count = ENV['worker_count'].to_i
@@ -328,7 +359,7 @@ Vagrant.configure("2") do |config|
       c.vm.provision 'join-kubernetes-cluster', type: 'shell' do |s|
         s.env = kubeadm_env
         s.inline = "sudo kubeadm join --token #{kubeadm_token} #{master_vm_ip}:6443"
-      end
+      end # c.vm.provision 'join-kubernetes-cluster'
     end # config.vm.define
   end # worker_count.times
 end # Vagrant.configure
