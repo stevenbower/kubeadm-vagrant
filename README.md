@@ -53,6 +53,7 @@ After the cluster is built the following files will be created:
 `kube.config`: local kubernetes config generated during kubeadm init (can be used like `kubectl --kubeconfig kube.config get pods`)
 
 Environment variables
+===
 
 The following environment variables can be configured to control the disposition of the cluster:
 
