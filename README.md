@@ -11,10 +11,11 @@ The following files will be used by the Vagrantfile to override files inside the
 
 Files
 ---
-* `sources.list`: override default system apt sources
-* `sources.list.kubernetes`: override default kubernetes apt repo
-* `kube-flannel.yml`: override Flannel deployment manifest
-* `kube-flannel-rbac.yml`: override Flannel RBAC deployment manifest
+* `custom/sources.list`: override default system apt sources
+* `custom/sources.list.kubernetes`: override default kubernetes apt repo
+* `custom/kube-flannel.yml`: override Flannel deployment manifest
+* `custom/kube-flannel-rbac.yml`: override Flannel RBAC deployment manifest
+* `kube.config`: local kubernetes config generated during kubeadm init (can be used like `kubectl --kubeconfig kube.config get pods`)
 
 The following environment variables can be configured to control the disposition of the cluster:
 
