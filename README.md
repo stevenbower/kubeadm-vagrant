@@ -3,11 +3,13 @@ Building a Kubernetes cluster with Vagrant
 
 This Vagrantfile allows building a Kubernetes cluster with a configurable number of workers. The cluster is configured using `kubeadm`.
 
-This Vagrantfile requires the **vagrant-hostmanager** plugin.
+Required Vagrant plugins
+===
 
-If you are building behind proxies and require proxy configurations inside the VMs, install the **vagrant-proxyconf** plugin with `vagrant plugin install vagrant-proxyconf`.
+Required Vagrant plugins can be installed with `vagrant plugin install`. **If you are behind proxies that perform TLS interception**, you may need to add the required CA certificates to Vagrant's certificate store. This can usually be found at `/opt/vagrant/embedded/cacert.pem`, but may vary depending on your OS and Vagrant installation method.
 
-The following files will be used by the Vagrantfile to override files inside the VM during startup, if found in a directory named **custom** at the same level as the Vagrantfile.
+* **vagrant-hostmanager**
+* **vagrant-proxyconf**
 
 Quick start
 ===
@@ -50,7 +52,7 @@ The build process will look for files with these names in the `custom` directory
 
 After the cluster is built the following files will be created:
 
-`kube.config`: local kubernetes config generated during kubeadm init (can be used like `kubectl --kubeconfig kube.config get pods`)
+`kube.config`: local Kubernetes config generated during `kubeadm init` (can be used like `kubectl --kubeconfig kube.config get pods`, or `export KUBECONFIG=/path/to/kube.config`)
 
 Environment variables
 ===
